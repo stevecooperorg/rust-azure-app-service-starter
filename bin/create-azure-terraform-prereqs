@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# This script creates the prerequisites for Terraform to deploy to Azure.
+# It creates a service principal and stores the credentials in the macOS Keychain.
+
+set -e
+
+PREFIX=$1
+
+if [ -z "${PREFIX}" ]; then
+    echo "Please pass a prefix like $0 MY_SITE_"
+    exit 1
+fi
+
+function get_value() {
+    local key=$1
+    local value=$(security find-generic-password -a "$USER" -s "$key" -w 2>/dev/null) || value=""
+    if [ -z "${key}" ]; then
+      echo "Please set $key using bin/set-azure-terraform-params" 1>&2
+      exit 1
+    fi
+
+    echo "${value}"
+}
+
+# Initialize our own variables
+AZURE_EMAIL_ADDRESS=$(get_value "${PREFIX}EMAIL_ADDRESS")
+AZURE_SUBSCRIPTION_NAME=$(get_value "${PREFIX}SUBSCRIPTION_NAME")
+AZURE_SERVICE_PRINCIPAL_NAME=$(get_value "${PREFIX}SERVICE_PRINCIPAL_NAME")
+
+cat <<EOF
+
+${PREFIX}EMAIL_ADDRESS: ${AZURE_EMAIL_ADDRESS}
+${PREFIX}SUBSCRIPTION_NAME: ${AZURE_SUBSCRIPTION_NAME}
+${PREFIX}SERVICE_PRINCIPAL_NAME: ${AZURE_SERVICE_PRINCIPAL_NAME}
+
+EOF
+
+# Authenticate to Azure via a Microsoft account
+# Check if the user is already logged in
+CURRENT_USER=$(az account show --query user.name --output tsv 2>/dev/null)
+
+if [ "$CURRENT_USER" != "$AZURE_EMAIL_ADDRESS" ]; then
+    # If the user is not logged in, call az login
+    echo "Logging in as $AZURE_EMAIL_ADDRESS..."
+    az login --username "${AZURE_EMAIL_ADDRESS}"
+else
+    echo "Already logged in as ${AZURE_EMAIL_ADDRESS}"
+fi
+
+# Set the current Azure subscription
+echo "Setting the current Azure subscription..."
+az account set --subscription "${AZURE_SUBSCRIPTION_NAME}"
+
+# Get the subscription ID of the given subscription name
+SUBSCRIPTION_ID=$(az account list --output json | jq -r --arg NAME "$AZURE_SUBSCRIPTION_NAME" '.[] | select(.name==$NAME) | .id')
+echo "Subscription ID is '${SUBSCRIPTION_ID}'"
+
+# Check if the service principal already exists
+EXISTING_SP=$(az ad sp list --display-name $AZURE_SERVICE_PRINCIPAL_NAME --query "[].{id:appId}" --output tsv)
+
+if [ -z "$EXISTING_SP" ]; then
+    # If the service principal does not exist, create a new one
+    echo "Creating a service principal..."
+    SERVICE_PRINCIPAL=$(az ad sp create-for-rbac --name $AZURE_SERVICE_PRINCIPAL_NAME --role Contributor --scopes /subscriptions/$SUBSCRIPTION_ID)
+
+    # Extract the appId, password, and tenant from the service principal creation output
+    APP_ID=$(echo "$SERVICE_PRINCIPAL" | jq -r .appId)
+    PASSWORD=$(echo "$SERVICE_PRINCIPAL" | jq -r .password)
+    TENANT=$(echo "$SERVICE_PRINCIPAL" | jq -r .tenant)
+
+    # Store the credentials in the macOS Keychain
+    security add-generic-password -a "$USER" -s "${PREFIX}APP_ID" -w "$APP_ID"
+    security add-generic-password -a "$USER" -s "${PREFIX}PASSWORD" -w "$PASSWORD"
+    security add-generic-password -a "$USER" -s "${PREFIX}TENANT" -w "$TENANT"
+
+else
+    # If the service principal already exists, get the existing details
+    echo "Service principal already exists. Getting the existing details..."
+    APP_ID=$(get_value "${PREFIX}APP_ID")
+    PASSWORD=$(get_value "${PREFIX}PASSWORD")
+    TENANT=$(get_value "${PREFIX}TENANT")
+fi
+
+# Set environment variables for Terraform
+# WIP: these need to set elsewhere
+
+echo "Setting environment variables used by the Azure Terraform provider..."
+# https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs
+export ARM_SUBSCRIPTION_ID="$SUBSCRIPTION_ID"
+export ARM_TENANT_ID="$TENANT"
+export ARM_CLIENT_ID="$APP_ID"
+export ARM_CLIENT_SECRET="$PASSWORD"
+

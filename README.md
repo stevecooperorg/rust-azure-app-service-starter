@@ -1,8 +1,10 @@
 # rust-azure-app-service-starter
 
+(!!! Work in progress !!!)
+
 A template for creating a rust app, compiling to a container, and deploying it on azure
 
-The big idea -- if you're a rust dev and want to host a web app, and have some azure credits to burn, you can do that. The rough idea?
+The big idea -- if you're a rust dev and want to host a web app, and have some azure credits to burn, you can do that. The rough approach?
 
 - write your app in rust
 - wrap it in a docker image
@@ -16,4 +18,5 @@ Here's the parts I'll be putting together
 
 - a Rust 'hello world' server using axum
 - a Dockerfile which wraps it up in a container
-- A [bicep](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/quickstart-create-bicep-use-visual-studio-code?tabs=CLI) definition of the hosting infrastructure and contaner registry
+- A terraform directory of the hosting infrastructure and contaner registry
+- scripts to log into azure and create a service principal.

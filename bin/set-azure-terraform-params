@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# This script will prompt for the following values and store them in the keychain:
+#
+# - ${PREFIX}EMAIL_ADDRESS
+# - ${PREFIX}SUBSCRIPTION_NAME
+# - ${PREFIX}SERVICE_PRINCIPAL_NAME
+
+# It also clears out any existing values for service principal creds in the keychain;
+#
+# - "${PREFIX}APP_ID"
+# - "${PREFIX}PASSWORD"
+# - "${PREFIX}TENANT"
+set -e
+
+PREFIX=$1
+
+if [ -z "${PREFIX}" ]; then
+    echo "Please pass a prefix like $0 MY_SITE_"
+    exit 1
+fi
+
+function get_or_prompt_for_value() {
+    local key=$1
+    echo "Please enter ${key}:" 1>&2
+    read value
+
+    if [ -z "${value}" ]; then
+        echo "${key} cannot be empty" 1>&2
+        exit 1
+    fi
+
+    # Store the value in the keychain
+    security add-generic-password -a "$USER" -s "$key" -w "${value}"
+
+    echo "${value}"
+}
+
+# Initialize our own variables
+security delete-generic-password -a "$USER" -s "${PREFIX}APP_ID"
+security delete-generic-password -a "$USER" -s "${PREFIX}PASSWORD"
+security delete-generic-password -a "$USER" -s "${PREFIX}TENANT"
+
+AZURE_EMAIL_ADDRESS=$(get_or_prompt_for_value "${PREFIX}EMAIL_ADDRESS")
+AZURE_SUBSCRIPTION_NAME=$(get_or_prompt_for_value "${PREFIX}SUBSCRIPTION_NAME")
+AZURE_SERVICE_PRINCIPAL_NAME=$(get_or_prompt_for_value "${PREFIX}SERVICE_PRINCIPAL_NAME")
+
+cat <<EOF
+
+${PREFIX}EMAIL_ADDRESS: ${AZURE_EMAIL_ADDRESS}
+${PREFIX}SUBSCRIPTION_NAME: ${AZURE_SUBSCRIPTION_NAME}
+${PREFIX}SERVICE_PRINCIPAL_NAME: ${AZURE_SERVICE_PRINCIPAL_NAME}
+
+EOF
